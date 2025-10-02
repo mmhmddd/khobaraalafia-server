@@ -41,8 +41,12 @@ if (!fs.existsSync(videosDir)) {
   fs.mkdirSync(videosDir, { recursive: true });
   console.log("Created videos directory:", videosDir);
 }
+app.use(cors({
+  origin: "http://185.97.146.197", // عنوان الموقع بتاعك
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
 
-app.use(cors());
 app.use(express.json());
 
 // serve static files
