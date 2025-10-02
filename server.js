@@ -17,12 +17,12 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// load .env file (auto detects .env in same folder)
+// load .env file
 dotenv.config();
 
 const app = express();
 
-// log Nodemailer config (hide password for security)
+// log Nodemailer config
 console.log("Nodemailer Config:", {
   host: process.env.EMAIL_HOST,
   user: process.env.EMAIL_USER,
@@ -41,8 +41,13 @@ if (!fs.existsSync(videosDir)) {
   fs.mkdirSync(videosDir, { recursive: true });
   console.log("Created videos directory:", videosDir);
 }
+
+// ✅ CORS settings to accept from any frontend
 app.use(cors({
-  origin: "http://185.97.146.197", // عنوان الموقع بتاعك
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true); // يسمح للـ Postman و السيرفرات الداخلية
+    callback(null, true); // يسمح لأي دومين (Vercel, Netlify, IP مباشر)
+  },
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
@@ -74,5 +79,6 @@ app.use("/api", bookingRoutes);
 // root endpoint
 app.get("/", (req, res) => res.send("🚀 Server running..."));
 
+// start server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
