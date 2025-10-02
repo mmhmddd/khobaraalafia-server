@@ -17,10 +17,17 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// load .env file from the same folder
-dotenv.config({ path: path.join(__dirname, ".env") });
+// load .env file (auto detects .env in same folder)
+dotenv.config();
 
 const app = express();
+
+// log Nodemailer config (hide password for security)
+console.log("Nodemailer Config:", {
+  host: process.env.EMAIL_HOST,
+  user: process.env.EMAIL_USER,
+  pass: process.env.EMAIL_PASS ? "********" : undefined,
+});
 
 // Create images and videos directories if they don't exist
 const imagesDir = path.join(__dirname, "images");
