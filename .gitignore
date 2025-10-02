@@ -1,0 +1,26 @@
+# node modules
+node_modules/
+
+# environment files
+.env
+
+# log files
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+logs/
+*.log
+
+# system files
+.DS_Store
+Thumbs.db
+
+# video files
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.flv
+*.wmv
+*.webm
+*.m4v
