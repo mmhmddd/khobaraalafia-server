@@ -1,27 +1,21 @@
-// doctorRoutes.js (unchanged, as no new routes needed)
+// doctorRoutes.js
 import express from "express";
 import { getDoctors, getDoctorById, createDoctor, updateDoctor, deleteDoctor } from "../controllers/doctorController.js";
 import { protect, admin } from "../middlewares/auth.middleware.js";
 import multer from 'multer';
-import fs from 'fs'; // For directory creation
-import path from 'path';
+import { CloudinaryStorage } from 'multer-storage-cloudinary'; // Add Cloudinary storage
+import { v2 as cloudinary } from 'cloudinary'; // Import cloudinary
 
-// Ensure images directory exists
-const imagesDir = path.join(process.cwd(), 'images');
-if (!fs.existsSync(imagesDir)) {
-  fs.mkdirSync(imagesDir, { recursive: true });
-  console.log('Created images directory:', imagesDir);
-}
+const router = express.Router();
 
-// Configure multer for image uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'images/'); // Folder to store images (relative to cwd)
+// Configure multer with Cloudinary storage
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'khobaraalafia/doctors', // Folder in Cloudinary (customize as needed)
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif'],
+    transformation: [{ width: 500, height: 500, crop: 'limit' }] // Optional: auto-resize
   },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + '-' + file.originalname); // Unique filename
-  }
 });
 
 const upload = multer({
@@ -37,12 +31,10 @@ const upload = multer({
   }
 });
 
-const router = express.Router();
-
 router.get("/doctors", getDoctors);
 router.get("/doctors/:id", getDoctorById);
-router.post("/doctors", protect, admin, upload.single('image'), createDoctor); // Add upload middleware
-router.put("/doctors/:id", protect, admin, upload.single('image'), updateDoctor); // Add upload middleware
+router.post("/doctors", protect, admin, upload.single('image'), createDoctor);
+router.put("/doctors/:id", protect, admin, upload.single('image'), updateDoctor);
 router.delete("/doctors/:id", protect, admin, deleteDoctor);
 
 export default router;

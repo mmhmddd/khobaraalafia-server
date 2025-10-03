@@ -1,29 +1,27 @@
+// clinicRoutes.js
 import express from "express";
 import { getClinics, getClinicById, createClinic, updateClinic, deleteClinic, addDoctorsToClinic, deleteClinicVideo } from "../controllers/clinicController.js";
 import { protect, admin } from "../middlewares/auth.middleware.js";
 import multer from 'multer';
-import fs from 'fs';
-import path from 'path';
+import { CloudinaryStorage } from 'multer-storage-cloudinary'; // Add Cloudinary storage
+import { v2 as cloudinary } from 'cloudinary'; // Import cloudinary
 
-const videosDir = path.join(process.cwd(), 'videos');
-if (!fs.existsSync(videosDir)) {
-  fs.mkdirSync(videosDir, { recursive: true });
-  console.log('Created videos directory:', videosDir);
-}
+const router = express.Router();
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'videos/');
+// Configure multer with Cloudinary storage for videos
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'khobaraalafia/clinics/videos', // Folder in Cloudinary (customize as needed)
+    allowed_formats: ['mp4', 'avi', 'mov'], // Video formats
+    resource_type: 'video', // Specify video resource type
+    transformation: [{ quality: 'auto:good' }] // Optional: auto-optimize video
   },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + '-' + file.originalname);
-  }
 });
 
 const upload = multer({
   storage,
-  limits: { fileSize: 100 * 1024 * 1024 },
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit for videos
   fileFilter: (req, file, cb) => {
     const allowedTypes = ['video/mp4', 'video/avi', 'video/mov'];
     if (allowedTypes.includes(file.mimetype)) {
@@ -32,9 +30,7 @@ const upload = multer({
       cb(new Error('Invalid file type. Only MP4, AVI, and MOV are allowed.'), false);
     }
   }
-}).array('videos', 10);
-
-const router = express.Router();
+}).array('videos', 10); // Up to 10 videos
 
 // Multer error handling middleware
 const multerErrorHandler = (err, req, res, next) => {

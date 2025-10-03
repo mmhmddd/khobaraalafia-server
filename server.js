@@ -2,6 +2,7 @@
 import dotenv from "dotenv";
 import express from "express";
 import cors from "cors";
+import { v2 as cloudinary } from "cloudinary"; // Add Cloudinary import
 import connectDB from "./src/config/db.js";
 import authRoutes from "./src/routes/auth.routes.js";
 import userRoutes from "./src/routes/user.routes.js";
@@ -10,7 +11,6 @@ import doctorRoutes from "./src/routes/doctorRoutes.js";
 import clinicRoutes from "./src/routes/clinicRoutes.js";
 import bookingRoutes from "./src/routes/bookingRoutes.js";
 import path from "path";
-import fs from "fs";
 import { fileURLToPath } from "url";
 
 // fix __dirname for ES modules
@@ -22,25 +22,24 @@ dotenv.config();
 
 const app = express();
 
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+console.log("Cloudinary Config:", {
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY ? "***" : undefined,
+});
+
 // log Nodemailer config
 console.log("Nodemailer Config:", {
   host: process.env.EMAIL_HOST,
   user: process.env.EMAIL_USER,
   pass: process.env.EMAIL_PASS ? "********" : undefined,
 });
-
-// Create images and videos directories if they don't exist
-const imagesDir = path.join(__dirname, "images");
-if (!fs.existsSync(imagesDir)) {
-  fs.mkdirSync(imagesDir, { recursive: true });
-  console.log("Created images directory:", imagesDir);
-}
-
-const videosDir = path.join(__dirname, "videos");
-if (!fs.existsSync(videosDir)) {
-  fs.mkdirSync(videosDir, { recursive: true });
-  console.log("Created videos directory:", videosDir);
-}
 
 // ✅ CORS settings to accept from any frontend
 app.use(cors({
@@ -54,9 +53,8 @@ app.use(cors({
 
 app.use(express.json());
 
-// serve static files
-app.use("/images", express.static(imagesDir));
-app.use("/videos", express.static(videosDir));
+// No need for local static serve anymore (images on Cloudinary)
+// Removed: app.use("/images", express.static(imagesDir)); etc.
 
 // set base URL dynamically
 app.use((req, res, next) => {

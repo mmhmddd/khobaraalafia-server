@@ -1,8 +1,7 @@
-// doctorController.js (fixed ReferenceError in createDoctor)
+// doctorController.js
 import Doctor from "../models/Doctor.js";
 import Clinic from "../models/Clinic.js";
-import fs from 'fs';
-import path from 'path';
+import { v2 as cloudinary } from 'cloudinary'; // Add for optional delete
 
 // Helper to safely parse JSON fields from req.body
 const parseJsonField = (body, field) => {
@@ -15,23 +14,11 @@ const parseJsonField = (body, field) => {
   }
 };
 
-// Helper to prepend base URL to image path
-const getImageUrl = (imagePath, baseUrl) => {
-  if (!imagePath) return null;
-  const fullPath = path.join(process.cwd(), imagePath.replace(/^\//, ''));
-  return fs.existsSync(fullPath) ? `${baseUrl}${imagePath}` : null;
-};
-
-// Get all doctors
+// Get all doctors (image is now full Cloudinary URL, no helper needed)
 export const getDoctors = async (req, res) => {
   try {
     const doctors = await Doctor.find({}).populate("clinics");
-    const baseUrl = res.locals.baseUrl;
-    const doctorsWithImageUrl = doctors.map(doctor => ({
-      ...doctor._doc,
-      image: getImageUrl(doctor.image, baseUrl),
-    }));
-    res.json(doctorsWithImageUrl);
+    res.json(doctors); // Return as is – image is full URL
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -44,12 +31,7 @@ export const getDoctorById = async (req, res) => {
     if (!doctor) {
       return res.status(404).json({ message: "الطبيب غير موجود" });
     }
-    const baseUrl = res.locals.baseUrl;
-    const doctorWithImageUrl = {
-      ...doctor._doc,
-      image: getImageUrl(doctor.image, baseUrl),
-    };
-    res.json(doctorWithImageUrl);
+    res.json(doctor); // Return as is – image is full URL
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -77,7 +59,8 @@ export const createDoctor = async (req, res) => {
 
   let imagePath = ''; // Default empty image path
   if (req.file) {
-    imagePath = `/images/${req.file.filename}`; // Store relative path for serving
+    imagePath = req.file.path; // Cloudinary secure URL
+    console.log(`Uploaded image to Cloudinary: ${imagePath}`);
   }
 
   try {
@@ -187,9 +170,6 @@ export const createDoctor = async (req, res) => {
     res.status(201).json(doctor);
   } catch (error) {
     console.error("Error in createDoctor:", error);
-    if (req.file) {
-      fs.unlinkSync(path.join(process.cwd(), 'images', req.file.filename));
-    }
     res.status(500).json({ message: `خطأ في الخادم: ${error.message}` });
   }
 };
@@ -230,13 +210,13 @@ export const updateDoctor = async (req, res) => {
     let imagePath = doctor.image;
 
     if (req.file) {
+      // Optional: Delete old image from Cloudinary
       if (doctor.image) {
-        const oldImagePath = path.join(process.cwd(), doctor.image.replace(/^\//, ''));
-        if (fs.existsSync(oldImagePath)) {
-          fs.unlinkSync(oldImagePath);
-        }
+        const publicId = doctor.image.split('/').pop().split('.')[0]; // Extract public_id
+        await cloudinary.uploader.destroy(publicId).catch(err => console.log('Error deleting old image:', err));
       }
-      imagePath = `/images/${req.file.filename}`;
+      imagePath = req.file.path; // New Cloudinary URL
+      console.log(`Updated image to Cloudinary: ${imagePath}`);
     }
 
     const effectiveSpecializationAr = specialization_ar || doctor.specialization.ar;
@@ -339,18 +319,15 @@ export const updateDoctor = async (req, res) => {
         specialWords: specialWords !== undefined ? specialWords : doctor.specialWords
       },
       { new: true }
-    );
+    ).populate("clinics");
     res.json(updatedDoctor);
   } catch (error) {
     console.error("Error in updateDoctor:", error);
-    if (req.file) {
-      fs.unlinkSync(path.join(process.cwd(), 'images', req.file.filename));
-    }
     res.status(500).json({ message: error.message });
   }
 };
 
-// Delete a doctor (no change)
+// Delete a doctor
 export const deleteDoctor = async (req, res) => {
   try {
     const doctor = await Doctor.findById(req.params.id);
@@ -358,11 +335,10 @@ export const deleteDoctor = async (req, res) => {
       return res.status(404).json({ message: "الطبيب غير موجود" });
     }
 
+    // Optional: Delete image from Cloudinary
     if (doctor.image) {
-      const imagePath = path.join(process.cwd(), doctor.image.replace(/^\//, ''));
-      if (fs.existsSync(imagePath)) {
-        fs.unlinkSync(imagePath);
-      }
+      const publicId = doctor.image.split('/').pop().split('.')[0]; // Extract public_id from URL
+      await cloudinary.uploader.destroy(publicId).catch(err => console.log('Error deleting image from Cloudinary:', err));
     }
 
     await Doctor.findByIdAndDelete(req.params.id);

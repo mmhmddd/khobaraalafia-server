@@ -1,8 +1,7 @@
 import mongoose from "mongoose";
 import Clinic from "../models/Clinic.js";
 import Doctor from "../models/Doctor.js";
-import fs from 'fs';
-import path from 'path';
+import { v2 as cloudinary } from 'cloudinary'; // Add for optional delete
 
 const parseJsonField = (body, field) => {
   try {
@@ -14,31 +13,21 @@ const parseJsonField = (body, field) => {
   }
 };
 
-const getImageUrl = (imagePath, baseUrl) => {
-  if (!imagePath) return null;
-  const fullPath = path.join(process.cwd(), imagePath.replace(/^\//, ''));
-  return fs.existsSync(fullPath) ? `${baseUrl}${imagePath}` : null;
-};
-
+// Get all clinics (videos paths are full Cloudinary URLs, no helper needed)
 export const getClinics = async (req, res) => {
   try {
     const clinics = await Clinic.find({});
-    const baseUrl = res.locals.baseUrl;
     const clinicsWithDoctors = await Promise.all(
       clinics.map(async (clinic) => {
         const doctors = await Doctor.find({ clinics: clinic._id })
           .populate("clinics")
           .populate("schedules.clinic");
-        const doctorsWithImage = doctors.map(doctor => ({
-          ...doctor.toObject(),
-          image: getImageUrl(doctor.image, baseUrl),
-        }));
         return { 
           ...clinic.toObject(), 
-          doctors: doctorsWithImage,
+          doctors: doctors, // Doctors already have Cloudinary image URLs
           videos: clinic.videos.map(video => ({
             _id: video._id,
-            path: video.path ? `${baseUrl}${video.path}` : null,
+            path: video.path, // Full Cloudinary URL
             label: video.label
           }))
         };
@@ -51,6 +40,7 @@ export const getClinics = async (req, res) => {
   }
 };
 
+// Get one clinic by ID
 export const getClinicById = async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -63,17 +53,12 @@ export const getClinicById = async (req, res) => {
     const doctors = await Doctor.find({ clinics: clinic._id })
       .populate("clinics")
       .populate("schedules.clinic");
-    const baseUrl = res.locals.baseUrl;
-    const doctorsWithImage = doctors.map(doctor => ({
-      ...doctor.toObject(),
-      image: getImageUrl(doctor.image, baseUrl),
-    }));
     res.json({ 
       ...clinic.toObject(), 
-      doctors: doctorsWithImage,
+      doctors: doctors, // Doctors already have Cloudinary image URLs
       videos: clinic.videos.map(video => ({
         _id: video._id,
-        path: video.path ? `${baseUrl}${video.path}` : null,
+        path: video.path, // Full Cloudinary URL
         label: video.label
       }))
     });
@@ -83,6 +68,7 @@ export const getClinicById = async (req, res) => {
   }
 };
 
+// Create a clinic
 export const createClinic = async (req, res) => {
   const {
     name,
@@ -103,36 +89,24 @@ export const createClinic = async (req, res) => {
   if (req.files && req.files.length > 0) {
     const labels = parseJsonField(req.body, 'videoLabels');
     if (labels.length !== req.files.length) {
-      req.files.forEach(file => {
-        fs.unlinkSync(path.join(process.cwd(), 'videos', file.filename));
-      });
       return res.status(400).json({ message: "عدد التسميات لا يتطابق مع عدد الفيديوهات المرفوعة" });
     }
     videoObjects = req.files.map((file, index) => ({
-      path: `/videos/${file.filename}`,
+      path: file.path, // Cloudinary secure URL
       label: labels[index] || `Video ${index + 1}`
     }));
+    console.log('Uploaded videos to Cloudinary:', videoObjects.map(v => v.path));
   }
 
   try {
     if (email) {
       const clinic = await Clinic.findOne({ email });
       if (clinic) {
-        if (req.files) {
-          req.files.forEach(file => {
-            fs.unlinkSync(path.join(process.cwd(), 'videos', file.filename));
-          });
-        }
         return res.status(400).json({ message: "العيادة موجودة بالفعل" });
       }
     }
 
     if (!name || !phone || !specializationType || !status || !availableDays || !about) {
-      if (req.files) {
-        req.files.forEach(file => {
-          fs.unlinkSync(path.join(process.cwd(), 'videos', file.filename));
-        });
-      }
       return res.status(400).json({ message: "الحقول المطلوبة مفقودة" });
     }
 
@@ -142,37 +116,17 @@ export const createClinic = async (req, res) => {
 
     const validDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "All"];
     if (!parsedAvailableDays || !Array.isArray(parsedAvailableDays) || parsedAvailableDays.length === 0) {
-      if (req.files) {
-        req.files.forEach(file => {
-          fs.unlinkSync(path.join(process.cwd(), 'videos', file.filename));
-        });
-      }
       return res.status(400).json({ message: "يجب تحديد يوم واحد على الأقل أو 'All'" });
     }
     if (!parsedAvailableDays.every(day => validDays.includes(day))) {
-      if (req.files) {
-        req.files.forEach(file => {
-          fs.unlinkSync(path.join(process.cwd(), 'videos', file.filename));
-        });
-      }
       return res.status(400).json({ message: "أيام غير صالحة" });
     }
 
     if (specializationType === "specialized" && (!parsedSpecialties || !Array.isArray(parsedSpecialties) || parsedSpecialties.length === 0)) {
-      if (req.files) {
-        req.files.forEach(file => {
-          fs.unlinkSync(path.join(process.cwd(), 'videos', file.filename));
-        });
-      }
       return res.status(400).json({ message: "يجب توفير قائمة التخصصات للعيادة المتخصصة" });
     }
 
     if (parsedSpecialWords.some(word => typeof word !== 'string' || word.trim().length < 1)) {
-      if (req.files) {
-        req.files.forEach(file => {
-          fs.unlinkSync(path.join(process.cwd(), 'videos', file.filename));
-        });
-      }
       return res.status(400).json({ message: "الكلمات الخاصة يجب أن تكون نصوصًا غير فارغة" });
     }
 
@@ -192,21 +146,15 @@ export const createClinic = async (req, res) => {
     });
     await clinic.save();
 
-    const baseUrl = res.locals.baseUrl;
     res.status(201).json({
       ...clinic.toObject(),
       videos: clinic.videos.map(video => ({
         _id: video._id,
-        path: video.path ? `${baseUrl}${video.path}` : null,
+        path: video.path, // Full Cloudinary URL
         label: video.label
       }))
     });
   } catch (error) {
-    if (req.files) {
-      req.files.forEach(file => {
-        fs.unlinkSync(path.join(process.cwd(), 'videos', file.filename));
-      });
-    }
     console.error("Error in createClinic:", error);
     res.status(500).json({ message: error.message });
   }
@@ -217,9 +165,7 @@ export const updateClinic = async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       if (req.files) {
-        req.files.forEach(file => {
-          fs.unlinkSync(path.join(process.cwd(), 'videos', file.filename));
-        });
+        // No local files to delete
       }
       return res.status(400).json({ message: "معرف العيادة غير صالح" });
     }
@@ -227,9 +173,7 @@ export const updateClinic = async (req, res) => {
     const clinic = await Clinic.findById(req.params.id);
     if (!clinic) {
       if (req.files) {
-        req.files.forEach(file => {
-          fs.unlinkSync(path.join(process.cwd(), 'videos', file.filename));
-        });
+        // No local files to delete
       }
       return res.status(404).json({ message: "العيادة غير موجودة" });
     }
@@ -239,11 +183,6 @@ export const updateClinic = async (req, res) => {
     if (email && email !== clinic.email) {
       const existingClinic = await Clinic.findOne({ email });
       if (existingClinic) {
-        if (req.files) {
-          req.files.forEach(file => {
-            fs.unlinkSync(path.join(process.cwd(), 'videos', file.filename));
-          });
-        }
         return res.status(400).json({ message: "البريد الإلكتروني مستخدم بالفعل" });
       }
     }
@@ -252,16 +191,14 @@ export const updateClinic = async (req, res) => {
     if (req.files && req.files.length > 0) {
       const labels = parseJsonField(req.body, 'videoLabels');
       if (labels.length !== req.files.length) {
-        req.files.forEach(file => {
-          fs.unlinkSync(path.join(process.cwd(), 'videos', file.filename));
-        });
         return res.status(400).json({ message: "عدد التسميات لا يتطابق مع عدد الفيديوهات المرفوعة" });
       }
       const newVideos = req.files.map((file, index) => ({
-        path: `/videos/${file.filename}`,
+        path: file.path, // Cloudinary secure URL
         label: labels[index] || `Video ${index + 1}`
       }));
       videoObjects = [...videoObjects, ...newVideos];
+      console.log('Updated videos to Cloudinary:', newVideos.map(v => v.path));
     }
 
     const parsedSpecialties = specialties ? parseJsonField(req.body, 'specialties') : clinic.specialties;
@@ -271,40 +208,20 @@ export const updateClinic = async (req, res) => {
     if (parsedAvailableDays) {
       const validDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "All"];
       if (!Array.isArray(parsedAvailableDays) || parsedAvailableDays.length === 0) {
-        if (req.files) {
-          req.files.forEach(file => {
-            fs.unlinkSync(path.join(process.cwd(), 'videos', file.filename));
-          });
-        }
         return res.status(400).json({ message: "يجب تحديد يوم واحد على الأقل أو 'All'" });
       }
       if (!parsedAvailableDays.every(day => validDays.includes(day))) {
-        if (req.files) {
-          req.files.forEach(file => {
-            fs.unlinkSync(path.join(process.cwd(), 'videos', file.filename));
-          });
-        }
         return res.status(400).json({ message: "أيام غير صالحة" });
       }
     }
 
     if (parsedSpecialWords.some(word => typeof word !== 'string' || word.trim().length < 1)) {
-      if (req.files) {
-        req.files.forEach(file => {
-          fs.unlinkSync(path.join(process.cwd(), 'videos', file.filename));
-        });
-      }
       return res.status(400).json({ message: "الكلمات الخاصة يجب أن تكون نصوصًا غير فارغة" });
     }
 
     const effectiveSpecializationType = specializationType || clinic.specializationType;
 
     if (effectiveSpecializationType === "specialized" && specialties && (!Array.isArray(parsedSpecialties) || parsedSpecialties.length === 0)) {
-      if (req.files) {
-        req.files.forEach(file => {
-          fs.unlinkSync(path.join(process.cwd(), 'videos', file.filename));
-        });
-      }
       return res.status(400).json({ message: "يجب توفير قائمة التخصصات للعيادة المتخصصة" });
     }
 
@@ -321,26 +238,21 @@ export const updateClinic = async (req, res) => {
       { new: true }
     );
 
-    const baseUrl = res.locals.baseUrl;
     res.json({
       ...updatedClinic.toObject(),
       videos: updatedClinic.videos.map(video => ({
         _id: video._id,
-        path: video.path ? `${baseUrl}${video.path}` : null,
+        path: video.path, // Full Cloudinary URL
         label: video.label
       }))
     });
   } catch (error) {
-    if (req.files) {
-      req.files.forEach(file => {
-        fs.unlinkSync(path.join(process.cwd(), 'videos', file.filename));
-      });
-    }
     console.error("Error in updateClinic:", error);
     res.status(500).json({ message: error.message });
   }
 };
 
+// Delete a clinic
 export const deleteClinic = async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -352,13 +264,14 @@ export const deleteClinic = async (req, res) => {
       return res.status(404).json({ message: "العيادة غير موجودة" });
     }
 
+    // Optional: Delete videos from Cloudinary
     if (clinic.videos && clinic.videos.length > 0) {
-      clinic.videos.forEach(video => {
-        const videoPath = path.join(process.cwd(), video.path.replace(/^\//, ''));
-        if (fs.existsSync(videoPath)) {
-          fs.unlinkSync(videoPath);
+      for (const video of clinic.videos) {
+        if (video.path) {
+          const publicId = video.path.split('/').pop().split('.')[0]; // Extract public_id from URL
+          await cloudinary.uploader.destroy(publicId, { resource_type: 'video' }).catch(err => console.log('Error deleting video from Cloudinary:', err));
         }
-      });
+      }
     }
 
     await Clinic.findByIdAndDelete(req.params.id);
@@ -370,7 +283,7 @@ export const deleteClinic = async (req, res) => {
   }
 };
 
-
+// Add doctors to clinic
 export const addDoctorsToClinic = async (req, res) => {
   const { id: clinicId } = req.params;
   const { doctorIds } = req.body;
@@ -413,17 +326,12 @@ export const addDoctorsToClinic = async (req, res) => {
     const updatedDoctors = await Doctor.find({ clinics: clinicId })
       .populate("clinics")
       .populate("schedules.clinic");
-    const baseUrl = res.locals.baseUrl;
-    const doctorsWithImage = updatedDoctors.map(doctor => ({
-      ...doctor.toObject(),
-      image: getImageUrl(doctor.image, baseUrl),
-    }));
     res.json({ 
       ...clinic.toObject(), 
-      doctors: doctorsWithImage,
+      doctors: updatedDoctors, // Doctors already have Cloudinary image URLs
       videos: clinic.videos.map(video => ({
         _id: video._id,
-        path: video.path ? `${baseUrl}${video.path}` : null,
+        path: video.path, // Full Cloudinary URL
         label: video.label
       })),
       message: "تم إضافة الأطباء إلى العيادة بنجاح" 
@@ -439,6 +347,7 @@ export const addDoctorsToClinic = async (req, res) => {
   }
 };
 
+// Delete clinic video
 export const deleteClinicVideo = async (req, res) => {
   const { clinicId, videoId } = req.params;
 
@@ -461,31 +370,20 @@ export const deleteClinicVideo = async (req, res) => {
     }
 
     const video = clinic.videos[videoIndex];
+    // Optional: Delete video from Cloudinary
     if (video.path) {
-      const videoPath = path.join(process.cwd(), video.path.replace(/^\//, ''));
-      try {
-        if (fs.existsSync(videoPath)) {
-          fs.unlinkSync(videoPath);
-          console.log(`Deleted video file: ${videoPath}`);
-        } else {
-          console.warn(`Video file not found: ${videoPath}`);
-        }
-      } catch (fileError) {
-        console.error(`Failed to delete video file ${videoPath}:`, fileError);
-      }
-    } else {
-      console.warn(`No video path provided for video ID: ${videoId}`);
+      const publicId = video.path.split('/').pop().split('.')[0]; // Extract public_id from URL
+      await cloudinary.uploader.destroy(publicId, { resource_type: 'video' }).catch(err => console.log('Error deleting video from Cloudinary:', err));
     }
 
     clinic.videos.splice(videoIndex, 1);
     await clinic.save();
 
-    const baseUrl = res.locals.baseUrl;
     res.json({
       ...clinic.toObject(),
       videos: clinic.videos.map(video => ({
         _id: video._id,
-        path: video.path ? `${baseUrl}${video.path}` : null,
+        path: video.path, // Full Cloudinary URL
         label: video.label
       })),
       message: "تم حذف الفيديو بنجاح"
