@@ -6,6 +6,9 @@ import { v2 as cloudinary } from 'cloudinary'; // Add for optional delete
 const parseJsonField = (body, field) => {
   try {
     const value = body[field];
+    if (Array.isArray(value)) {
+      return value; 
+    }
     return value ? JSON.parse(value) : [];
   } catch (error) {
     console.error(`Error parsing ${field}:`, error);
@@ -24,10 +27,10 @@ export const getClinics = async (req, res) => {
           .populate("schedules.clinic");
         return { 
           ...clinic.toObject(), 
-          doctors: doctors, // Doctors already have Cloudinary image URLs
+          doctors: doctors, 
           videos: clinic.videos.map(video => ({
             _id: video._id,
-            path: video.path, // Full Cloudinary URL
+            path: video.path, 
             label: video.label
           }))
         };
