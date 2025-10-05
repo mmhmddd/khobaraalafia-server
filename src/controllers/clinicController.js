@@ -1,22 +1,28 @@
 import mongoose from "mongoose";
 import Clinic from "../models/Clinic.js";
 import Doctor from "../models/Doctor.js";
-import { v2 as cloudinary } from 'cloudinary'; // Add for optional delete
+import { v2 as cloudinary } from 'cloudinary';
 
 const parseJsonField = (body, field) => {
   try {
     const value = body[field];
     if (Array.isArray(value)) {
-      return value; 
+      // Handle array of objects with 'ar' property or direct strings
+      return value.map(item => (typeof item === 'object' && item.ar ? item.ar : item));
     }
-    return value ? JSON.parse(value) : [];
+    if (typeof value === 'string') {
+      const parsed = JSON.parse(value);
+      // Handle parsed array of objects with 'ar' property or direct strings
+      return Array.isArray(parsed) ? parsed.map(item => (typeof item === 'object' && item.ar ? item.ar : item)) : [];
+    }
+    return [];
   } catch (error) {
-    console.error(`Error parsing ${field}:`, error);
+    console.error(`Error parsing ${field}:`, error, { value: body[field] });
     return [];
   }
 };
 
-// Get all clinics (videos paths are full Cloudinary URLs, no helper needed)
+// Get all clinics
 export const getClinics = async (req, res) => {
   try {
     const clinics = await Clinic.find({});
@@ -30,7 +36,7 @@ export const getClinics = async (req, res) => {
           doctors: doctors, 
           videos: clinic.videos.map(video => ({
             _id: video._id,
-            path: video.path, 
+            path: video.path,
             label: video.label
           }))
         };
@@ -58,10 +64,10 @@ export const getClinicById = async (req, res) => {
       .populate("schedules.clinic");
     res.json({ 
       ...clinic.toObject(), 
-      doctors: doctors, // Doctors already have Cloudinary image URLs
+      doctors: doctors,
       videos: clinic.videos.map(video => ({
         _id: video._id,
-        path: video.path, // Full Cloudinary URL
+        path: video.path,
         label: video.label
       }))
     });
@@ -95,7 +101,7 @@ export const createClinic = async (req, res) => {
       return res.status(400).json({ message: "عدد التسميات لا يتطابق مع عدد الفيديوهات المرفوعة" });
     }
     videoObjects = req.files.map((file, index) => ({
-      path: file.path, // Cloudinary secure URL
+      path: file.path,
       label: labels[index] || `Video ${index + 1}`
     }));
     console.log('Uploaded videos to Cloudinary:', videoObjects.map(v => v.path));
@@ -135,7 +141,7 @@ export const createClinic = async (req, res) => {
 
     const clinic = new Clinic({
       name,
-      email: email || undefined, 
+      email: email || undefined,
       phone,
       address,
       specializationType,
@@ -153,7 +159,7 @@ export const createClinic = async (req, res) => {
       ...clinic.toObject(),
       videos: clinic.videos.map(video => ({
         _id: video._id,
-        path: video.path, // Full Cloudinary URL
+        path: video.path,
         label: video.label
       }))
     });
@@ -183,6 +189,11 @@ export const updateClinic = async (req, res) => {
 
     const { specializationType, availableDays, specialties, videoLabels, email } = req.body;
 
+    console.log('Request body:', req.body);
+    console.log('Raw specialties:', req.body.specialties);
+    const parsedSpecialties = req.body.specialties ? parseJsonField(req.body, 'specialties') : clinic.specialties;
+    console.log('Parsed specialties:', parsedSpecialties);
+
     if (email && email !== clinic.email) {
       const existingClinic = await Clinic.findOne({ email });
       if (existingClinic) {
@@ -197,14 +208,13 @@ export const updateClinic = async (req, res) => {
         return res.status(400).json({ message: "عدد التسميات لا يتطابق مع عدد الفيديوهات المرفوعة" });
       }
       const newVideos = req.files.map((file, index) => ({
-        path: file.path, // Cloudinary secure URL
+        path: file.path,
         label: labels[index] || `Video ${index + 1}`
       }));
       videoObjects = [...videoObjects, ...newVideos];
       console.log('Updated videos to Cloudinary:', newVideos.map(v => v.path));
     }
 
-    const parsedSpecialties = specialties ? parseJsonField(req.body, 'specialties') : clinic.specialties;
     const parsedAvailableDays = availableDays ? parseJsonField(req.body, 'availableDays') : clinic.availableDays;
     const parsedSpecialWords = req.body.specialWords ? parseJsonField(req.body, 'specialWords') : clinic.specialWords;
 
@@ -232,7 +242,7 @@ export const updateClinic = async (req, res) => {
       req.params.id, 
       {
         ...req.body,
-        email: email || undefined, 
+        email: email || undefined,
         specialties: effectiveSpecializationType === "specialized" ? parsedSpecialties : [],
         availableDays: parsedAvailableDays,
         specialWords: parsedSpecialWords,
@@ -245,7 +255,7 @@ export const updateClinic = async (req, res) => {
       ...updatedClinic.toObject(),
       videos: updatedClinic.videos.map(video => ({
         _id: video._id,
-        path: video.path, // Full Cloudinary URL
+        path: video.path,
         label: video.label
       }))
     });
@@ -267,11 +277,10 @@ export const deleteClinic = async (req, res) => {
       return res.status(404).json({ message: "العيادة غير موجودة" });
     }
 
-    // Optional: Delete videos from Cloudinary
     if (clinic.videos && clinic.videos.length > 0) {
       for (const video of clinic.videos) {
         if (video.path) {
-          const publicId = video.path.split('/').pop().split('.')[0]; // Extract public_id from URL
+          const publicId = video.path.split('/').pop().split('.')[0];
           await cloudinary.uploader.destroy(publicId, { resource_type: 'video' }).catch(err => console.log('Error deleting video from Cloudinary:', err));
         }
       }
@@ -331,10 +340,10 @@ export const addDoctorsToClinic = async (req, res) => {
       .populate("schedules.clinic");
     res.json({ 
       ...clinic.toObject(), 
-      doctors: updatedDoctors, // Doctors already have Cloudinary image URLs
+      doctors: updatedDoctors,
       videos: clinic.videos.map(video => ({
         _id: video._id,
-        path: video.path, // Full Cloudinary URL
+        path: video.path,
         label: video.label
       })),
       message: "تم إضافة الأطباء إلى العيادة بنجاح" 
@@ -373,9 +382,8 @@ export const deleteClinicVideo = async (req, res) => {
     }
 
     const video = clinic.videos[videoIndex];
-    // Optional: Delete video from Cloudinary
     if (video.path) {
-      const publicId = video.path.split('/').pop().split('.')[0]; // Extract public_id from URL
+      const publicId = video.path.split('/').pop().split('.')[0];
       await cloudinary.uploader.destroy(publicId, { resource_type: 'video' }).catch(err => console.log('Error deleting video from Cloudinary:', err));
     }
 
@@ -386,7 +394,7 @@ export const deleteClinicVideo = async (req, res) => {
       ...clinic.toObject(),
       videos: clinic.videos.map(video => ({
         _id: video._id,
-        path: video.path, // Full Cloudinary URL
+        path: video.path,
         label: video.label
       })),
       message: "تم حذف الفيديو بنجاح"
