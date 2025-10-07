@@ -5,11 +5,11 @@ import dayjs from 'dayjs';
 
 // Create a new booking
 export const createBooking = async (req, res) => {
-  const { clientName, clientPhone, clientAddress, clientEmail, clinicId, date, time } = req.body;
+  const { clientName, clientPhone, clinicId, date, time } = req.body;
   const user = req.user; // May be undefined for unauthenticated users
   try {
     // Validate required fields
-    if (!clinicId || !date || !time || !clientName || !clientPhone || !clientAddress || !clientEmail) {
+    if (!clinicId || !date || !time || !clientName || !clientPhone) {
       return res.status(400).json({ message: "جميع الحقول مطلوبة" });
     }
 
@@ -41,8 +41,6 @@ export const createBooking = async (req, res) => {
       time,
       clientName,
       clientPhone,
-      clientAddress,
-      clientEmail,
       bookingNumber,
       confirmationCode,
       status: "pending",
@@ -79,8 +77,6 @@ export const createBooking = async (req, res) => {
         time: populatedBooking.time,
         clientName: populatedBooking.clientName,
         clientPhone: populatedBooking.clientPhone,
-        clientAddress: populatedBooking.clientAddress,
-        clientEmail: populatedBooking.clientEmail,
         status: populatedBooking.status,
         bookingNumber: populatedBooking.bookingNumber,
         confirmationCode: populatedBooking.confirmationCode,
@@ -136,6 +132,38 @@ export const cancelBooking = async (req, res) => {
     }
 
     res.json({ message: "تم إلغاء الحجز" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "خطأ في الخادم" });
+  }
+};
+
+// Delete a booking
+export const deleteBooking = async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id);
+    if (!booking) return res.status(404).json({ message: "الحجز غير موجود" });
+
+    // Check if the user is authorized to delete the booking
+    if (booking.user && booking.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "غير مصرح" });
+    }
+
+    // Remove the booking from the database
+    await Booking.deleteOne({ _id: req.params.id });
+
+    // If user is authenticated, remove the reservation from their reservations array
+    if (booking.user) {
+      await User.updateOne(
+        { _id: req.user._id },
+        { $pull: { reservations: { date: booking.date, time: booking.time } } }
+      );
+    }
+
+    // Decrement total bookings in clinic
+    await Clinic.findByIdAndUpdate(booking.clinic, { $inc: { totalBookings: -1 } });
+
+    res.json({ message: "تم حذف الحجز بنجاح" });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "خطأ في الخادم" });

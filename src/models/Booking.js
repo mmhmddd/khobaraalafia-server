@@ -8,8 +8,6 @@ const bookingSchema = new mongoose.Schema(
     time: { type: String, required: true }, // e.g., "09:00"
     clientName: { type: String, required: true },
     clientPhone: { type: String, required: true },
-    clientAddress: { type: String, required: true },
-    clientEmail: { type: String, required: true },
     status: { type: String, enum: ["pending", "confirmed", "cancelled"], default: "pending" },
     bookingNumber: { type: Number, required: true },
     confirmationCode: { type: String, required: true },

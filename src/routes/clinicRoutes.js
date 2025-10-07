@@ -1,27 +1,25 @@
-// clinicRoutes.js
 import express from "express";
 import { getClinics, getClinicById, createClinic, updateClinic, deleteClinic, addDoctorsToClinic, deleteClinicVideo } from "../controllers/clinicController.js";
 import { protect, admin } from "../middlewares/auth.middleware.js";
 import multer from 'multer';
-import { CloudinaryStorage } from 'multer-storage-cloudinary'; // Add Cloudinary storage
-import { v2 as cloudinary } from 'cloudinary'; // Import cloudinary
+import { CloudinaryStorage } from 'multer-storage-cloudinary';
+import { v2 as cloudinary } from 'cloudinary';
 
 const router = express.Router();
 
-// Configure multer with Cloudinary storage for videos
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
-    folder: 'khobaraalafia/clinics/videos', // Folder in Cloudinary (customize as needed)
-    allowed_formats: ['mp4', 'avi', 'mov'], // Video formats
-    resource_type: 'video', // Specify video resource type
-    transformation: [{ quality: 'auto:good' }] // Optional: auto-optimize video
+    folder: 'khobaraalafia/clinics/videos',
+    allowed_formats: ['mp4', 'avi', 'mov'],
+    resource_type: 'video',
+    transformation: [{ quality: 'auto:good' }]
   },
 });
 
 const upload = multer({
   storage,
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit for videos
+  limits: { fileSize: 100 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowedTypes = ['video/mp4', 'video/avi', 'video/mov'];
     if (allowedTypes.includes(file.mimetype)) {
@@ -30,9 +28,8 @@ const upload = multer({
       cb(new Error('Invalid file type. Only MP4, AVI, and MOV are allowed.'), false);
     }
   }
-}).array('videos', 10); // Up to 10 videos
+}).array('videos', 10);
 
-// Multer error handling middleware
 const multerErrorHandler = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     return res.status(400).json({ message: `خطأ في رفع الملف: ${err.message}` });

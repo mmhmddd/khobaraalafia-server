@@ -1,3 +1,5 @@
+// Backend Controller (clinics controller file)
+
 import mongoose from "mongoose";
 import Clinic from "../models/Clinic.js";
 import Doctor from "../models/Doctor.js";
@@ -7,12 +9,10 @@ const parseJsonField = (body, field) => {
   try {
     const value = body[field];
     if (Array.isArray(value)) {
-      // Handle array of objects with 'ar' property or direct strings
       return value.map(item => (typeof item === 'object' && item.ar ? item.ar : item));
     }
     if (typeof value === 'string') {
       const parsed = JSON.parse(value);
-      // Handle parsed array of objects with 'ar' property or direct strings
       return Array.isArray(parsed) ? parsed.map(item => (typeof item === 'object' && item.ar ? item.ar : item)) : [];
     }
     return [];
@@ -22,7 +22,6 @@ const parseJsonField = (body, field) => {
   }
 };
 
-// Get all clinics
 export const getClinics = async (req, res) => {
   try {
     const clinics = await Clinic.find({});
@@ -49,7 +48,6 @@ export const getClinics = async (req, res) => {
   }
 };
 
-// Get one clinic by ID
 export const getClinicById = async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -77,7 +75,6 @@ export const getClinicById = async (req, res) => {
   }
 };
 
-// Create a clinic
 export const createClinic = async (req, res) => {
   const {
     name,
@@ -91,7 +88,8 @@ export const createClinic = async (req, res) => {
     price,
     about,
     specialWords,
-    videoLabels
+    videoLabels,
+    isAvailableForBooking
   } = req.body;
 
   let videoObjects = [];
@@ -115,7 +113,7 @@ export const createClinic = async (req, res) => {
       }
     }
 
-    if (!name || !phone || !specializationType || !status || !availableDays || !about) {
+    if (!name || !phone || !specializationType || !status || !availableDays || !about || isAvailableForBooking === undefined) {
       return res.status(400).json({ message: "الحقول المطلوبة مفقودة" });
     }
 
@@ -151,7 +149,8 @@ export const createClinic = async (req, res) => {
       price,
       about,
       specialWords: parsedSpecialWords || [],
-      videos: videoObjects
+      videos: videoObjects,
+      isAvailableForBooking: isAvailableForBooking === 'true' || isAvailableForBooking === true
     });
     await clinic.save();
 
@@ -169,7 +168,6 @@ export const createClinic = async (req, res) => {
   }
 };
 
-// Update a clinic
 export const updateClinic = async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -187,7 +185,7 @@ export const updateClinic = async (req, res) => {
       return res.status(404).json({ message: "العيادة غير موجودة" });
     }
 
-    const { specializationType, availableDays, specialties, videoLabels, email } = req.body;
+    const { specializationType, availableDays, specialties, videoLabels, email, isAvailableForBooking } = req.body;
 
     console.log('Request body:', req.body);
     console.log('Raw specialties:', req.body.specialties);
@@ -202,6 +200,39 @@ export const updateClinic = async (req, res) => {
     }
 
     let videoObjects = clinic.videos;
+
+    // Handle existing videos (deletions and label updates)
+    const parsedExistingVideos = parseJsonField(req.body, 'existingVideos');
+    if (Array.isArray(parsedExistingVideos)) {
+      // Find videos to delete (present in DB but not in sent existingVideos)
+      const toDelete = videoObjects.filter(v => !parsedExistingVideos.some(ev => ev._id === v._id.toString()));
+      for (const vid of toDelete) {
+        if (vid.path) {
+          const publicId = vid.path.split('/').pop()?.split('.')[0];
+          if (publicId) {
+            try {
+              await cloudinary.uploader.destroy(publicId, { resource_type: 'video' });
+              console.log(`Deleted video ${vid._id} from Cloudinary`);
+            } catch (err) {
+              console.error(`Error deleting video ${vid._id}:`, err);
+            }
+          }
+        }
+      }
+
+      // Filter to remaining videos
+      videoObjects = videoObjects.filter(v => parsedExistingVideos.some(ev => ev._id === v._id.toString()));
+
+      // Update labels
+      for (const ev of parsedExistingVideos) {
+        const vid = videoObjects.find(v => v._id.toString() === ev._id);
+        if (vid && ev.label) {
+          vid.label = ev.label;
+        }
+      }
+    }
+
+    // Append new videos
     if (req.files && req.files.length > 0) {
       const labels = parseJsonField(req.body, 'videoLabels');
       if (labels.length !== req.files.length) {
@@ -246,7 +277,8 @@ export const updateClinic = async (req, res) => {
         specialties: effectiveSpecializationType === "specialized" ? parsedSpecialties : [],
         availableDays: parsedAvailableDays,
         specialWords: parsedSpecialWords,
-        videos: videoObjects
+        videos: videoObjects,
+        isAvailableForBooking: isAvailableForBooking !== undefined ? (isAvailableForBooking === 'true' || isAvailableForBooking === true) : clinic.isAvailableForBooking
       }, 
       { new: true }
     );
@@ -265,7 +297,6 @@ export const updateClinic = async (req, res) => {
   }
 };
 
-// Delete a clinic
 export const deleteClinic = async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -295,7 +326,6 @@ export const deleteClinic = async (req, res) => {
   }
 };
 
-// Add doctors to clinic
 export const addDoctorsToClinic = async (req, res) => {
   const { id: clinicId } = req.params;
   const { doctorIds } = req.body;
@@ -359,7 +389,6 @@ export const addDoctorsToClinic = async (req, res) => {
   }
 };
 
-// Delete clinic video
 export const deleteClinicVideo = async (req, res) => {
   const { clinicId, videoId } = req.params;
 
@@ -383,16 +412,28 @@ export const deleteClinicVideo = async (req, res) => {
 
     const video = clinic.videos[videoIndex];
     if (video.path) {
-      const publicId = video.path.split('/').pop().split('.')[0];
-      await cloudinary.uploader.destroy(publicId, { resource_type: 'video' }).catch(err => console.log('Error deleting video from Cloudinary:', err));
+      const publicId = video.path.split('/').pop()?.split('.')[0];
+      if (publicId) {
+        try {
+          const result = await cloudinary.uploader.destroy(publicId, { resource_type: 'video' });
+          console.log(`Cloudinary deletion result for video ${videoId}:`, result);
+        } catch (err) {
+          console.error(`Error deleting video ${videoId} from Cloudinary:`, err);
+        }
+      } else {
+        console.warn(`No valid publicId for video ${videoId} at path: ${video.path}`);
+      }
+    } else {
+      console.warn(`No path found for video ${videoId}`);
     }
 
     clinic.videos.splice(videoIndex, 1);
-    await clinic.save();
+    const updatedClinic = await clinic.save();
+    console.log(`Clinic ${clinicId} saved after video ${videoId} deletion. Updated videos:`, updatedClinic.videos);
 
     res.json({
-      ...clinic.toObject(),
-      videos: clinic.videos.map(video => ({
+      ...updatedClinic.toObject(),
+      videos: updatedClinic.videos.map(video => ({
         _id: video._id,
         path: video.path,
         label: video.label

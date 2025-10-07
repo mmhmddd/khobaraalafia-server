@@ -24,7 +24,8 @@ const clinicSchema = new mongoose.Schema(
     videos: [{
       path: { type: String },
       label: { type: String, required: true }
-    }]
+    }],
+    isAvailableForBooking: { type: Boolean, required: true, default: true }
   },
   { timestamps: true }
 );
