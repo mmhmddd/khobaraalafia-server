@@ -10,6 +10,7 @@ import testimonialRoutes from "./src/routes/testimonial.routes.js";
 import doctorRoutes from "./src/routes/doctorRoutes.js";
 import clinicRoutes from "./src/routes/clinicRoutes.js";
 import bookingRoutes from "./src/routes/bookingRoutes.js";
+import cursorImageRoutes from "./src/routes/cursorImageRoutes.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -73,6 +74,7 @@ app.use("/api/testimonials", testimonialRoutes);
 app.use("/api", doctorRoutes);
 app.use("/api", clinicRoutes);
 app.use("/api", bookingRoutes);
+app.use("/api/cursor-images", cursorImageRoutes);
 
 // root endpoint
 app.get("/", (req, res) => res.send("🚀 Server running..."));
